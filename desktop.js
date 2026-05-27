@@ -4,23 +4,50 @@
 //
 // ★ このファイルを GitHub に上げ直すだけで全施設に反映されます
 //   plugin.zip を配り直す必要はありません
+//
+// 【プラグインIDの受け取り方】
+//   manifest.jsonのURLに ?pluginId=PLUGIN_ID を付与することで
+//   jsDelivr経由で読み込まれてもプラグインIDを取得できます
 // =============================================================
 
 (function () {
   'use strict';
 
+  var VERSION = '1.0.1';
+
   // --------------------------------------------------
-  // バージョン情報
-  // 更新したときはここの数字を上げてください
+  // プラグインIDをURLのクエリパラメータから取得する
+  //
+  // manifest.jsonに以下のように書くことで渡される：
+  //   "https://cdn.jsdelivr.net/gh/.../desktop.js?pluginId=PLUGIN_ID"
+  //
+  // kintoneはJSを読み込む際にPLUGIN_IDを実際の値に置き換えてくれる
   // --------------------------------------------------
-  var VERSION = '1.0.0';
+  function getPluginId() {
+    // 現在読み込まれているスクリプトのURLからpluginIdを取得する
+    var scripts = document.querySelectorAll('script[src*="desktop.js"]');
+    for (var i = 0; i < scripts.length; i++) {
+      var src = scripts[i].src;
+      var match = src.match(/[?&]pluginId=([^&]+)/);
+      if (match) return match[1];
+    }
+    // フォールバック：kintone.$PLUGIN_IDが使える場合はそちらを使う
+    if (typeof kintone !== 'undefined' && kintone.$PLUGIN_ID) {
+      return kintone.$PLUGIN_ID;
+    }
+    return null;
+  }
 
   // --------------------------------------------------
   // プラグイン設定を読み込む
   // --------------------------------------------------
   function getConfig() {
-    var PLUGIN_ID = kintone.$PLUGIN_ID;
-    var config = kintone.plugin.app.getConfig(PLUGIN_ID);
+    var pluginId = getPluginId();
+    if (!pluginId) {
+      console.error('[bulk-download] プラグインIDが取得できませんでした。');
+      return null;
+    }
+    var config = kintone.plugin.app.getConfig(pluginId);
     return {
       attachmentFieldCode : config.attachmentFieldCode || '',
       folderFieldCode     : config.folderFieldCode     || '',
@@ -31,7 +58,6 @@
     };
   }
 
-  // カンマ区切りのビューID文字列を数値配列に変換する
   function parseViewIds(str) {
     if (!str || str.trim() === '') return [];
     return str.split(',').map(function (s) {
@@ -41,25 +67,16 @@
     });
   }
 
-  // --------------------------------------------------
-  // 現在の一覧ビューIDをURLから取得する
-  // --------------------------------------------------
   function getCurrentViewId() {
     var match = location.search.match(/[?&]view=(\d+)/);
     return match ? parseInt(match[1], 10) : null;
   }
 
-  // --------------------------------------------------
-  // 表示が許可された一覧かどうか確認する
-  // --------------------------------------------------
   function isAllowedView(allowedViewIds) {
     if (allowedViewIds.length === 0) return true;
     return allowedViewIds.indexOf(getCurrentViewId()) !== -1;
   }
 
-  // --------------------------------------------------
-  // ボタンのCSSをページに1回だけ注入する
-  // --------------------------------------------------
   function injectStyles() {
     if (document.getElementById('bulk-dl-plugin-style')) return;
     var style = document.createElement('style');
@@ -84,9 +101,6 @@
     document.head.appendChild(style);
   }
 
-  // --------------------------------------------------
-  // 実行前の確認ダイアログ
-  // --------------------------------------------------
   function showConfirmDialog(recordCount, fileCount, zipFileName) {
     return window.confirm([
       '以下の内容でZIPファイルを作成します。',
@@ -99,9 +113,6 @@
     ].join('\n'));
   }
 
-  // --------------------------------------------------
-  // 日付文字列「2025-05-01」→「2025年05月」に変換する
-  // --------------------------------------------------
   function toYearMonth(dateStr) {
     if (!dateStr) return '日付なし';
     var parts = dateStr.split('-');
@@ -123,9 +134,6 @@
     return String(field.value).replace(/[/\\:*?"<>|]/g, '');
   }
 
-  // --------------------------------------------------
-  // 重複するファイルパスに連番を付ける
-  // --------------------------------------------------
   function deduplicateNames(files) {
     var countMap = {};
     return files.map(function (file) {
@@ -140,18 +148,13 @@
     });
   }
 
-  // --------------------------------------------------
-  // 全レコードから添付ファイル情報を収集する
-  // --------------------------------------------------
   function collectFiles(records, config) {
     var files = [];
     records.forEach(function (record) {
       var attachField = record[config.attachmentFieldCode];
       if (!attachField || !attachField.value || attachField.value.length === 0) return;
-
       var folder = getFolderName(record, config.folderFieldCode);
       var person = getPersonName(record, config.personFieldCode);
-
       attachField.value.forEach(function (fileInfo) {
         var pathParts = [];
         if (folder) pathParts.push(folder);
@@ -163,9 +166,6 @@
     return files;
   }
 
-  // --------------------------------------------------
-  // 絞り込み条件のみ安全に取得する（getQueryCondition を使う）
-  // --------------------------------------------------
   function getBaseQuery() {
     try {
       return kintone.app.getQueryCondition() || '';
@@ -175,19 +175,14 @@
     }
   }
 
-  // --------------------------------------------------
-  // 全レコードを取得する（500件ずつページング）
-  // --------------------------------------------------
   async function getAllRecords(appId) {
     var allRecords = [];
-    var offset     = 0;
-    var limit      = 500;
-    var baseQuery  = getBaseQuery();
-
+    var offset    = 0;
+    var limit     = 500;
+    var baseQuery = getBaseQuery();
     while (true) {
       var query = (baseQuery ? baseQuery + ' ' : '') +
         'order by レコード番号 asc limit ' + limit + ' offset ' + offset;
-
       var response = await kintone.api(
         kintone.api.url('/k/v1/records', true), 'GET', { app: appId, query: query }
       );
@@ -198,10 +193,6 @@
     return allRecords;
   }
 
-  // --------------------------------------------------
-  // 添付ファイルを1件ダウンロードしてblobを返す
-  // kintone.api() では不可。fetch() + /k/v1/file.json を使う
-  // --------------------------------------------------
   async function fetchFileBlob(fileKey) {
     var url = '/k/v1/file.json?fileKey=' + encodeURIComponent(fileKey);
     var response = await fetch(url, {
@@ -214,20 +205,15 @@
     return await response.blob();
   }
 
-  // --------------------------------------------------
-  // ZIPを作成してブラウザにダウンロードさせる
-  // --------------------------------------------------
   async function downloadAsZip(files, zipFileName, button) {
     var dedupedFiles = deduplicateNames(files);
     var zip   = new JSZip(); // eslint-disable-line no-undef
     var total = dedupedFiles.length;
-
     for (var i = 0; i < dedupedFiles.length; i++) {
       button.textContent = '取得中... ' + (i + 1) + '/' + total + '件';
       var blob = await fetchFileBlob(dedupedFiles[i].fileKey);
       zip.file(dedupedFiles[i].zipPath, blob);
     }
-
     button.textContent = 'ZIP生成中...';
     var zipBlob = await zip.generateAsync({ type: 'blob' });
     var url = URL.createObjectURL(zipBlob);
@@ -240,9 +226,6 @@
     URL.revokeObjectURL(url);
   }
 
-  // --------------------------------------------------
-  // ボタンを初期状態に戻す
-  // --------------------------------------------------
   function resetButton(button, label) {
     button.disabled = false;
     button.textContent = label;
@@ -254,14 +237,9 @@
   kintone.events.on('app.record.index.show', async function (event) {
 
     var config = getConfig();
-
-    // 添付ファイルフィールドが未設定なら表示しない
+    if (!config) return event;
     if (!config.attachmentFieldCode) return event;
-
-    // 許可されたビュー以外では表示しない
     if (!isAllowedView(config.allowedViewIds)) return event;
-
-    // 二重追加防止
     if (document.getElementById('bulk-dl-plugin-btn')) return event;
 
     injectStyles();
@@ -272,12 +250,12 @@
     var button = document.createElement('button');
     button.id          = 'bulk-dl-plugin-btn';
     button.textContent = config.buttonLabel;
-    // バージョンをtitle属性に入れておくと確認しやすい
-    button.title = 'bulk-download-plugin v' + VERSION;
+    button.title       = 'bulk-download-plugin v' + VERSION;
 
     button.addEventListener('click', async function () {
       button.disabled = true;
-      var cfg = getConfig(); // 毎クリック時に最新設定を取得
+      var cfg = getConfig();
+      if (!cfg) { resetButton(button, config.buttonLabel); return; }
 
       try {
         button.textContent = 'レコード取得中...';
@@ -300,7 +278,6 @@
 
         await downloadAsZip(files, cfg.zipFileName, button);
 
-        // 完了表示（グリーン）→ 3秒後に元に戻す
         button.classList.add('kt-done');
         button.textContent = 'ダウンロード完了';
         setTimeout(function () {
