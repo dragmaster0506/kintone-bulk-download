@@ -266,4 +266,4 @@
     return event;
   });
 
-})(kintone.$PLUGIN_ID);
+})(window.__BULK_DOWNLOAD_PLUGIN_ID__ || kintone.$PLUGIN_ID);
