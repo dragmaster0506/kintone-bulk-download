@@ -5,22 +5,22 @@
 // ★ このファイルを GitHub に上げ直すだけで全施設に反映されます
 // =============================================================
 
-(function () {
+(function (PLUGIN_ID) {
   'use strict';
 
-  var VERSION = '1.0.2';
+  var VERSION = '1.0.3';
 
   // --------------------------------------------------
   // プラグイン設定を読み込む
-  // GitHub Pages経由でもkintone.$PLUGIN_IDは正常に渡される
+  // PLUGIN_IDは即時関数の引数として外から渡される
+  // → 外部JSでも確実にプラグインIDを受け取れる
   // --------------------------------------------------
   function getConfig() {
-    var pluginId = kintone.$PLUGIN_ID;
-    if (!pluginId) {
+    if (!PLUGIN_ID) {
       console.error('[bulk-download] プラグインIDが取得できませんでした。');
       return null;
     }
-    var config = kintone.plugin.app.getConfig(pluginId);
+    var config = kintone.plugin.app.getConfig(PLUGIN_ID);
     return {
       attachmentFieldCode : config.attachmentFieldCode || '',
       folderFieldCode     : config.folderFieldCode     || '',
@@ -266,4 +266,4 @@
     return event;
   });
 
-})();
+})(kintone.$PLUGIN_ID);
