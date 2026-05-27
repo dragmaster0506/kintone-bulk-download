@@ -1,48 +1,21 @@
 // =============================================================
 // 添付ファイル階層ZIP一括ダウンロード
-// desktop.js  ─  GitHub に置く「本体スクリプト」
+// desktop.js  ─  GitHub Pages で配信する本体スクリプト
 //
 // ★ このファイルを GitHub に上げ直すだけで全施設に反映されます
-//   plugin.zip を配り直す必要はありません
-//
-// 【プラグインIDの受け取り方】
-//   manifest.jsonのURLに ?pluginId=PLUGIN_ID を付与することで
-//   jsDelivr経由で読み込まれてもプラグインIDを取得できます
 // =============================================================
 
 (function () {
   'use strict';
 
-  var VERSION = '1.0.1';
-
-  // --------------------------------------------------
-  // プラグインIDをURLのクエリパラメータから取得する
-  //
-  // manifest.jsonに以下のように書くことで渡される：
-  //   "https://cdn.jsdelivr.net/gh/.../desktop.js?pluginId=PLUGIN_ID"
-  //
-  // kintoneはJSを読み込む際にPLUGIN_IDを実際の値に置き換えてくれる
-  // --------------------------------------------------
-  function getPluginId() {
-    // 現在読み込まれているスクリプトのURLからpluginIdを取得する
-    var scripts = document.querySelectorAll('script[src*="desktop.js"]');
-    for (var i = 0; i < scripts.length; i++) {
-      var src = scripts[i].src;
-      var match = src.match(/[?&]pluginId=([^&]+)/);
-      if (match) return match[1];
-    }
-    // フォールバック：kintone.$PLUGIN_IDが使える場合はそちらを使う
-    if (typeof kintone !== 'undefined' && kintone.$PLUGIN_ID) {
-      return kintone.$PLUGIN_ID;
-    }
-    return null;
-  }
+  var VERSION = '1.0.2';
 
   // --------------------------------------------------
   // プラグイン設定を読み込む
+  // GitHub Pages経由でもkintone.$PLUGIN_IDは正常に渡される
   // --------------------------------------------------
   function getConfig() {
-    var pluginId = getPluginId();
+    var pluginId = kintone.$PLUGIN_ID;
     if (!pluginId) {
       console.error('[bulk-download] プラグインIDが取得できませんでした。');
       return null;
@@ -231,9 +204,6 @@
     button.textContent = label;
   }
 
-  // --------------------------------------------------
-  // 一覧画面イベント：ボタンを追加する
-  // --------------------------------------------------
   kintone.events.on('app.record.index.show', async function (event) {
 
     var config = getConfig();
